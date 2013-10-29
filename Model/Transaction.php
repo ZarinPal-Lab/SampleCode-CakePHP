@@ -6,15 +6,30 @@ class Transaction extends RitaZarinpalClientAppModel{
 
 
 	public function createTransaction(){
-		$this->create(false);
-		$this->save(array('type' => 'temp'),false);
+		$this->create();
+		$this->save(array(
+			'type' => 'temp', 
+			'created_at'=> time()
+		));
 		return $this->getLastInsertID();
 	}	
 	
 	
-	public function startTransaction($id,$data){
-		$this->id = $id;
-		return  $this->save($data,false);
+/**
+ * Transaction::startTransaction()
+ * 
+ * @param mixed $id
+ * @param mixed $data
+ * @return
+ */
+	public function startTransaction($data){
+		$data['type'] = 'start';
+		$data['started_at'] = time();
+		 if( $this->save($data)){
+		 	return true;
+		 }else{
+		 	return false;
+		 }
 	}	
 	
 }
