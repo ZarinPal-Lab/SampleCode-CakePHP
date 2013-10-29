@@ -1,5 +1,5 @@
 <?php
-
+App::uses('Transaction','RitaZarinpalClient.Model');
 /**
  * ZarinpalComponent
  * 
@@ -10,37 +10,171 @@
  * @access public
  */
 class ZarinpalComponent extends Component {
-	
+
+
+/**
+ * Settings for this Component
+ *
+ * @var array
+ */	
 	protected $configs = array(
 		'servers' 		=> false,
 		'masterServer'	=> false,
 		'getewayUrl'	=> false,
 		'zarinGate'		=> true,
 		'merchantID'	=> false,
-		'verifyCallbak' => false,
 		'use'			=> 'auto'   //[auto|soap|nusoap]
 	);
 	
-	
+/**
+ * Error Codes
+ *
+ * @var array
+ */	
+	public $errorCode = array(
+		'-1'	=> 'اطلاعات ارسال شده ناقص می‌باشد.',
+		'-2'	=> 'IP یا شناسه مرچنت صحیح نمی باشد.',
+		'-3'	=> 'مقدار پرداختی می‌بایست بیشتر از 100 تومان باشد.',
+		'-4'	=> 'سطح تائید پذیرنده پائین‌تر از سطح نقره‌ای قرار دارد.',
+		'-11'	=> 'درخواست مورد نظر نامعتبر است.',
+		'-21'	=> 'هیچ نوع عملیات مالی برای این تراکنش موجود نمی‌باشد.',
+		'-22'	=> 'تراکنش ناموفق می باشد.',
+		'-23'	=> 'رقم تراکنش با رقم پرداخت شده مطابقت ندارد.',
+		'-54'	=> 'درخواست مورد نظر آرشیو شده است.',
+		'100'	=> 'عملیات با موفقیت انجام شد است.',
+		'101'	=> 'عملیات با موفقیت انجام شده است،ولی قبلا عملیات PaymentVerification بر روی این تراکنش انجام شده است.',
+	);
+
+/**
+ * Error Codes
+ *
+ * @var boolean
+ */		
 	protected $client = false;
 	
-	/**
-	 * ZarinpalComponent::__construct()
-	 * 
-	 * @param mixed $collection
-	 * @param mixed $settings
-	 * @return void
-	 */
+	
+/**
+ * Settings for this Component
+ *
+ * @var array
+ */		
+	public $data = array();
+	
+	protected $controller = null;
+	protected $Transaction;
+/**
+ * ZarinpalComponent::__construct()
+ * 
+ * @param mixed $collection
+ * @param mixed $settings
+ * @return void
+ */
 	public function __construct(ComponentCollection $collection, $settings = array()){
+		parent::__construct($collection,$settings);
 		$configs =  $this->_loadConfigFile();
 		$this->configs = Hash::merge($this->configs,$configs,$settings );
+		$this->Transaction = ClassRegistry::init('RitaZarinpalClient.Transaction');
+		
 	}
 
+	public function initialize(Controller $controller) {
+		$this->controller = $controller;
+	}
 	
+	public function getErr($code){
+		return __d('rita_zarinpal_client',$this->errorCode[$code]);
+	}
 	
-	public function payment($eventName,$amount,$extra= array()){
+	/**
+	 * ZarinpalComponent::payment()
+	 * 
+	 * @param mixed $amount
+	 * @param mixed $data
+	 * @param mixed $options
+	 * @return void
+	 */
+	public function payment($amount,$data= array(),$options = array()){
+		$_option = array(
+			'type' => 'redirect'  // [redirect|event]
+		);
+		$transaction = array();
 		
-		l(array($eventName,$amount,$extra));	
+		$options = array_merge($_option,$options);
+		
+		
+		if ($options['type'] === 'redirect') {
+			
+			if (!isset($options['url'])) {
+				$options['url'] = $this->controller->referer();
+			}elseif(is_array($options['url'])) {
+				$options['url'] = Router::url($options['url']);
+			}
+		}
+		
+		if ($options['type'] === 'event' && !isset($options['name'])) {
+			throw new  ForbiddenException('need to name of event');
+		}
+		
+		
+		
+		$transactionId = $this->Transaction->createTransaction();
+
+		$transaction['body']['option'] = $options;
+		$transaction['body']['data'] = $data;
+		$transaction['amount'] = $amount;
+		$transaction['type'] = 'start';
+		
+		
+		
+		$data = array(
+			'MerchantID' => $this->configs['merchantID'],
+			'Amount' => $amount,
+			'Description' => 'transaction #'.$transactionId,
+			'CallbackURL' => Router::url(array( 'plugin' => 'RitaZarinpalClient', 'controller' => 'transactions','action'=>'verification'),true),
+			'Email' => '',
+			'Mobile' =>''
+		);
+
+
+		$server = $this->_getServer();
+		if($this->configs['user'] = 'auto'){
+			$this->configs['use'] = extension_loaded('soap')? 'soap' : 'nusoap';
+		}
+
+		
+		if($this->configs['use'] === 'soap'){
+			$client = new SoapClient($server, array('encoding' => 'UTF-8'));
+			$method = "__soapCall";
+			
+		}else{
+			$client = new SoapClient($server,'wsdl');
+			$client->soap_defencoding = 'UTF-8';
+			$method = 'call';
+		}
+
+
+		
+				l($this->configs['use'],'type');
+		l($data,'send data');
+		l($method,'methgod');
+		$res = $client->{$method}('PaymentRequest',array($data));	
+		l($res);
+			$status = $res['Status'];
+		if($res['Status'] === '100' && strlen($res['Authority']) === 36){
+			$transaction['authority'] = $res['Authority'];
+		
+			$res = $this->Transaction->createTransaction($transactionId,$transaction);
+			if($res){
+				$gateway = $this->configs['getewayUrl'].DS.$transaction['authority'];
+				if($this->configs['zarinGate']) {
+					$gateway .=  DS.'ZarinGate';
+				}
+				return $this->controller->redirect($gateway,true);
+			}
+		}else{
+			
+		return $this->errorCode[$status];
+		}
 		
 	}
 
@@ -52,21 +186,10 @@ class ZarinpalComponent extends Component {
 	 * @return void
 	 */
 	private function client(){
-		$server = $this->_getServer();
-		if($this->configs['user'] = 'auto'){
-			$this->configs['use'] = extension_loaded('soap')? 'soap' : 'nusoap';
-		}
 		
-		$client = null;
 	
-		if($this->configs['use'] == 'soap'){
-			$client = new SoapClient($server, array('encoding' => 'UTF-8'));
-			
-		}else{
-			$client = new SoapClient($server,'wsdl');
-			$client->soap_defencoding = 'UTF-8';
-		}
-		return $client;
+	
+		
 	}
 
 /**
