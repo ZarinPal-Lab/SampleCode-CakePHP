@@ -59,7 +59,7 @@ class ZarinpalComponent extends Component {
  */ 	
 	public $TransactionModel;
 	
-	private $transaction =  array(); 
+	private $error = null;
 	
 /**
  * ZarinpalComponent::__construct()
@@ -82,8 +82,51 @@ class ZarinpalComponent extends Component {
  */
 	public function initialize(Controller $controller) {
 		$this->controller = $controller;
-		$this->TransactionModel = ClassRegistry::init('RitaZarinpalClient.Transaction');
+		//$this->TransactionModel = ClassRegistry::init('RitaZarinpalClient.Transaction');
 
+	}
+	
+	
+	
+	public function getAuthorityPayment($amount,$description,$callback) {
+	
+		
+		$callback = (is_array($callback))? Router::url($callback,true) : $callback;
+		$clientParams = array(
+			'MerchantID' => $this->configs['merchantID'],
+			'Amount' => $amount,
+			'Description' => $description,
+			'CallbackURL' => $callback,
+			'Email' => '',
+			'Mobile' =>''
+		);
+		
+		
+		$server = $this->_getServer();
+		
+		if ($this->configs['use'] === 'auto') {
+			$this->configs['use'] = extension_loaded('soap') ? 'soap' : 'nusoap';
+		}
+
+		
+		if ($this->configs['use'] === 'soap') {
+			$client = new SoapClient($server, array('encoding' => 'UTF-8'));
+			$method = "__soapCall";
+		} else {
+			$client = new SoapClient($server, 'wsdl');
+			$client->soap_defencoding = 'UTF-8';
+			$method = 'call';
+		}		
+		
+		
+		$res = $client->{$method}('PaymentRequest',array($clientParams));	
+		extract($res);
+		if( $Status === '100' && strlen($Authority) === 36){
+			return $Authority;
+		}
+		$this->error = $Status;
+			
+		return  false;	
 	}
 	
 /**
@@ -94,17 +137,28 @@ class ZarinpalComponent extends Component {
  * @param mixed $options
  * @return void
  */
-	public function payment($amount,$data= array(),$options = array()){
-		$this->options($options);
-		
-		
-		
-		$transactionId = $this->TransactionModel->createTransaction();
-		$this->transaction['id'] = $transactionId;
-		$this->transaction['data'] = serialize($data);
-		$this->transaction['amout'] = $amount;
+	public function goToPayment($au){
 	
+		$gateway = $this->configs['getewayUrl'].$au;
+		if($this->configs['zarinGate']) {
+			$gateway .=  DS.'ZarinGate';
+		}
+		$this->log($gateway);
+		$this->controller->response->header('Location', $gateway);
+		$this->controller->response->send();
+		$this->_stop();
+		
+	}
 
+
+	public function verification($authority = null,$amount = null){
+		if(!is_string($authority) and strlen($authority) !== 36){
+			throw new ForbiddenException('کد تراکنش نا معتبر است');
+		}
+
+		
+
+		
 		$server = $this->_getServer();
 		if ($this->configs['use'] === 'auto') {
 			$this->configs['use'] = extension_loaded('soap') ? 'soap' : 'nusoap';
@@ -122,42 +176,20 @@ class ZarinpalComponent extends Component {
 		
 		$clientParams = array(
 			'MerchantID' => $this->configs['merchantID'],
-			'Amount' => 150,//$amount,
-			'Description' => 'transaction #'.$transactionId,
-			'CallbackURL' => Router::url(array(
-				'plugin' => 'RitaZarinpalClient', 
-				'controller' => 'transactions', 
-				'action'=>'verification'
-				),true),
-			'Email' => '',
-			'Mobile' =>''
+			'Amount' => $amount,
+			'Authority' => $authority
 		);
 		
-		$res = $client->{$method}('PaymentRequest',array($data));	
+		$res = $client->{$method}('PaymentVerification',array($clientParams));	
+		CakeLog::error($res);
 		extract($res);
-		
-		if( $Status === '100' && strlen($Authority) === 36){
-			$transaction['authority'] = $Authority;
-			$res = $this->TransactionModel->startTransaction($transaction);
-
-			if($res === true){
-				$gateway = $this->configs['getewayUrl'].$transaction['authority'];
-				if($this->configs['zarinGate']) {
-					$gateway .=  DS.'ZarinGate';
-				}
-				//return $this->controller->redirect($gateway,null,true);
-				$this->controller->response->header('Location', Router::url($gateway, true));
-				$this->controller->response->send();
-				$this->_stop();
-			}
-		}else{
-			
-			return $res['Status'];
+		if( $Status === '100' ){
+			return $RefID;
 		}
-		
+		$this->error = $Status;
+			
+		return  false;				
 	}
-
-
 
 /**
  * ZarinpalComponent::options()
@@ -266,8 +298,8 @@ class ZarinpalComponent extends Component {
  * @param mixed $code
  * @return
  */
-	public function getErr($code) {
-		return __d('rita_zarinpal_client', $this->errorCode[$code]);
+	public function getErr() {
+		return __d('rita_zarinpal_client', $this->errorCode[$this->error]);
 	}
 
 	

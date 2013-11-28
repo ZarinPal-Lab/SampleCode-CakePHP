@@ -2,15 +2,33 @@
 
 Class TransactionsController extends RitaZarinpalClientAppController{
 	
+	public $components = array(
+		'RequestHandler', 
+		'RitaZarinpalClient.Zarinpal' => array('merchantID' =>'524cdafd-8dec-49d3-88d7-74385ee8a9d4'));
+		
 	
+	
+/**
+ * TransactionsController::beforeFilter()
+ * 
+ * @return void
+ */
 	public function beforeFilter() {
         parent::beforeFilter();
         $this->Auth->allow();
 	
     }
 	
+/**
+ * TransactionsController::verification()
+ * 
+ * @return void
+ */
 	public function verification(){
-		echo "asasd";
+		 extract($this->request->query);
+		 l($Authority);
+		 	$this->Zarinpal->verification($Authority);
+		 l($Status);
 	}
 		
 	
