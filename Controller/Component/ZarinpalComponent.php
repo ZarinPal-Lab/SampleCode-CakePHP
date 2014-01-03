@@ -120,8 +120,13 @@ class ZarinpalComponent extends Component {
 		
 		
 		$res = $client->{$method}('PaymentRequest',array($clientParams));	
+		if (is_object($res)) {
+			$res = get_object_vars($res);
+		}
+
 		extract($res);
-		if( $Status === '100' && strlen($Authority) === 36){
+		
+		if( intval($Status) === 100 && strlen($Authority) === 36){
 			return $Authority;
 		}
 		$this->error = $Status;
@@ -143,7 +148,6 @@ class ZarinpalComponent extends Component {
 		if($this->configs['zarinGate']) {
 			$gateway .=  DS.'ZarinGate';
 		}
-		$this->log($gateway);
 		$this->controller->response->header('Location', $gateway);
 		$this->controller->response->send();
 		$this->_stop();
@@ -181,9 +185,12 @@ class ZarinpalComponent extends Component {
 		);
 		
 		$res = $client->{$method}('PaymentVerification',array($clientParams));	
-		CakeLog::error($res);
+			if (is_object($res)) {
+			$res = get_object_vars($res);
+		}
+
 		extract($res);
-		if( $Status === '100' ){
+		if( intval($Status) === 100 ){
 			return $RefID;
 		}
 		$this->error = $Status;
