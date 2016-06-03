@@ -2,6 +2,6 @@
 
 App::uses('AppController', 'Controller');
 
-class RitaZarinpalClientAppController extends AppController {
-
+class RitaZarinpalClientAppController extends AppController
+{
 }

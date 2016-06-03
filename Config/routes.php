@@ -1,7 +1,6 @@
 <?php
 
 Router::connect(
-	'/transactions',
-	array('plugin' => 'RitaZarinpalClient', 'controller' => 'transactions','action' => 'verification')
+    '/transactions',
+    ['plugin' => 'RitaZarinpalClient', 'controller' => 'transactions', 'action' => 'verification']
 );
-
